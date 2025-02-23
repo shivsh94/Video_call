@@ -1,13 +1,20 @@
 import { Server } from "socket.io";
 import dotenv from "dotenv";
+import express from "express";
+import { createServer } from "http";
+
 dotenv.config();
 
-const io = new Server(process.env.PORT, {
+const app = express();
+const server = createServer(app); // Create HTTP server
+
+const io = new Server(server, {
   cors: {
-    origin: "*", 
+    origin: "*",
     methods: ["GET", "POST"],
   },
 });
+
 app.get("/", (req, res) => {
   res.send("hello");
 });
@@ -44,7 +51,7 @@ io.on("connection", (socket) => {
     });
 
     socket.on("call:accepted", ({ to, answer }) => {
-      io.to(to).emit("call:accepted", { from: socket.id, answer }); 
+      io.to(to).emit("call:accepted", { from: socket.id, answer });
     });
 
     socket.on("peer:nego:needed", ({ to, offer }) => {
@@ -53,10 +60,8 @@ io.on("connection", (socket) => {
 
     socket.on("peer:nego:done", ({ to, answer }) => {
       io.to(to).emit("peer:nego:final", { from: socket.id, answer });
-    }
-    );
+    });
 
-    
     socket.to(roomId).emit("room:join", {
       message: `${email} has joined the room`,
       email,
@@ -64,7 +69,6 @@ io.on("connection", (socket) => {
     });
   });
 
- 
   socket.on("disconnect", () => {
     const email = socketidToEmailMap.get(socket.id);
     if (email) {
@@ -75,4 +79,9 @@ io.on("connection", (socket) => {
       console.log(`User disconnected: undefined (${socket.id})`);
     }
   });
+});
+
+const PORT = process.env.PORT || 5000;
+server.listen(PORT, () => {
+  console.log(`Server running on port ${PORT}`);
 });
