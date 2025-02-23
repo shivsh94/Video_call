@@ -20,7 +20,7 @@ const Room = () => {
     );
 
     const handleCall = useCallback(async () => {
-        const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+        const stream = await navigator.mediaDevices.getUserMedia({ video: true});
         const offer = await peer.getOffer();
         socket.emit("user:call", { to: remoteSocketId, offer });
         setMyStream(stream);
