@@ -10,7 +10,7 @@ const Room = () => {
     const [myStream, setMyStream] = useState(null);
     const [remoteStream, setRemoteStream] = useState(null);
 
-    // All the existing handlers and effects remain exactly the same
+   
     const handleRoomJoin = useCallback(
         (data) => {
             console.log("Room joined:", data.email);

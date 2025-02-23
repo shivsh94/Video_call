@@ -1,8 +1,10 @@
 import { Server } from "socket.io";
+import dotenv from "dotenv";
+dotenv.config();
 
-const io = new Server(3000, {
+const io = new Server(process.env.PORT, {
   cors: {
-    origin: "http://localhost:5173", 
+    origin: "*", 
     methods: ["GET", "POST"],
   },
 });
@@ -21,16 +23,13 @@ io.on("connection", (socket) => {
 
     console.log(`User ${email} is joining room ${roomId}`);
 
-    // Store mappings correctly
     emailToSocketMap.set(email, socket.id);
     socketidToEmailMap.set(socket.id, email);
 
     io.to(roomId).emit("user:join", { email, id: socket.id });
 
-    // Make the user join the room
     socket.join(roomId);
 
-    // Send confirmation to the user
     io.to(socket.id).emit("room:join", {
       message: `You joined room ${roomId}`,
       roomId,
@@ -62,7 +61,7 @@ io.on("connection", (socket) => {
     });
   });
 
-  // Handle disconnection properly
+ 
   socket.on("disconnect", () => {
     const email = socketidToEmailMap.get(socket.id);
     if (email) {
