@@ -1,27 +1,37 @@
 import { Server } from "socket.io";
 import dotenv from "dotenv";
 import express from "express";
-import { createServer } from "http";
+import http from "http";
+import cors from "cors";
+import bodyParser from "body-parser";
 
 dotenv.config();
 
 const app = express();
-const server = createServer(app); // Create HTTP server
 
+const server = http.createServer(app);
 const io = new Server(server, {
   cors: {
-    origin: process.env.CLIENT_URL?.replace(/\/$/, ""), // Remove trailing slash if present
-    methods: ["GET", "POST", "PUT", "DELETE"],
-    allowedHeaders: ["Content-Type", "Authorization"],
-    credentials: true,
+    origin: "*",
+    methods: ["GET", "POST"],
   },
 });
-
-
+app.use(bodyParser.json());
+app.use(express.json());
+app.use(
+  cors({
+    origin: "*",
+    credentials: true,
+  })
+);
 
 app.get("/", (req, res) => {
-  res.send("hello");
+  return res.json({
+    success: true,
+    message: "Your server is up and running",
+  });
 });
+
 
 const emailToSocketMap = new Map();
 const socketidToEmailMap = new Map();

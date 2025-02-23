@@ -1,7 +1,8 @@
 import {Routes, Route} from 'react-router-dom'
 // import './App.css'
-import Lobby from './screens/Lobby'
+
 import Room from './screens/Room'
+import Home from '../src/pages/Home'
 
 function App() {
   
@@ -10,7 +11,7 @@ function App() {
     <div>
     <Routes>
      
-      <Route path="/" element={<Lobby />} /> 
+      <Route path="/" element={<Home />} /> 
 
       <Route path="/room/:roomId" element={<Room />} />
     </Routes>
