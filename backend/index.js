@@ -10,10 +10,13 @@ const server = createServer(app); // Create HTTP server
 
 const io = new Server(server, {
   cors: {
-    origin: "*",
-    methods: ["GET", "POST"],
+    origin: process.env.CLIENT_URL || "*",
+    methods: ["GET", "POST", "PUT", "DELETE"],
+    allowedHeaders: ["Content-Type", "Authorization"],
+    credentials: true, 
   },
 });
+
 
 app.get("/", (req, res) => {
   res.send("hello");
