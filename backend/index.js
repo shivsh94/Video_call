@@ -8,6 +8,9 @@ const io = new Server(process.env.PORT, {
     methods: ["GET", "POST"],
   },
 });
+router.get("/", (req, res) => {
+  res.send("hello");
+});
 
 const emailToSocketMap = new Map();
 const socketidToEmailMap = new Map();
@@ -53,7 +56,7 @@ io.on("connection", (socket) => {
     }
     );
 
-    // Notify others in the room
+    
     socket.to(roomId).emit("room:join", {
       message: `${email} has joined the room`,
       email,
