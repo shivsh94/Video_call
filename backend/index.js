@@ -8,7 +8,7 @@ const io = new Server(process.env.PORT, {
     methods: ["GET", "POST"],
   },
 });
-router.get("/", (req, res) => {
+app.get("/", (req, res) => {
   res.send("hello");
 });
 
