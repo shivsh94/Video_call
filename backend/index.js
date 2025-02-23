@@ -1,16 +1,76 @@
-import express from 'express';
-import dotenv from 'dotenv';
+import { Server } from "socket.io";
 
+const io = new Server(3000, {
+  cors: {
+    origin: "http://localhost:5173", 
+    methods: ["GET", "POST"],
+  },
+});
 
-dotenv.config();
+const emailToSocketMap = new Map();
+const socketidToEmailMap = new Map();
 
-const app = express();
+io.on("connection", (socket) => {
+  console.log("A user connected:", socket.id);
 
-app.get('/', (req, res) => {
-    res.send('Hello World ');
-    })
+  socket.on("room:join", ({ email, roomId }) => {
+    if (!email || !roomId) {
+      console.error("Missing email or roomId:", { email, roomId });
+      return;
+    }
 
-app.listen(process.env.PORT, () => {
-    console.log(`Server is running on port ${process.env.PORT}`);
-}
-);
+    console.log(`User ${email} is joining room ${roomId}`);
+
+    // Store mappings correctly
+    emailToSocketMap.set(email, socket.id);
+    socketidToEmailMap.set(socket.id, email);
+
+    io.to(roomId).emit("user:join", { email, id: socket.id });
+
+    // Make the user join the room
+    socket.join(roomId);
+
+    // Send confirmation to the user
+    io.to(socket.id).emit("room:join", {
+      message: `You joined room ${roomId}`,
+      roomId,
+      email,
+    });
+
+    socket.on("user:call", ({ to, offer }) => {
+      io.to(to).emit("incoming:call", { from: socket.id, offer });
+    });
+
+    socket.on("call:accepted", ({ to, answer }) => {
+      io.to(to).emit("call:accepted", { from: socket.id, answer }); 
+    });
+
+    socket.on("peer:nego:needed", ({ to, offer }) => {
+      io.to(to).emit("peer:nego:needed", { from: socket.id, offer });
+    });
+
+    socket.on("peer:nego:done", ({ to, answer }) => {
+      io.to(to).emit("peer:nego:final", { from: socket.id, answer });
+    }
+    );
+
+    // Notify others in the room
+    socket.to(roomId).emit("room:join", {
+      message: `${email} has joined the room`,
+      email,
+      roomId,
+    });
+  });
+
+  // Handle disconnection properly
+  socket.on("disconnect", () => {
+    const email = socketidToEmailMap.get(socket.id);
+    if (email) {
+      console.log(`User disconnected: ${email} (${socket.id})`);
+      emailToSocketMap.delete(email);
+      socketidToEmailMap.delete(socket.id);
+    } else {
+      console.log(`User disconnected: undefined (${socket.id})`);
+    }
+  });
+});
