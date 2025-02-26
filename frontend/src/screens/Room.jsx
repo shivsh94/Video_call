@@ -13,7 +13,7 @@ const Room = () => {
    
     const handleRoomJoin = useCallback(
         (data) => {
-            console.log("Room joined:", data.email);
+            console.log("Room joined:", data.name);
             setRemoteSocketId(data.id);
         },
         []
@@ -118,7 +118,7 @@ const Room = () => {
                         ) : (
                             <div className="flex items-center gap-2 text-gray-400">
                                 <UserX size={24} />
-                                <span className="text-lg">No one in room</span>
+                                <span className="text-lg">Waiting for Other User </span>
                             </div>
                         )}
                     </div>

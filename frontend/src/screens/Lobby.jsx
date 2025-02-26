@@ -4,7 +4,7 @@ import { useSocket } from '../context/SocketProvider';
 import { Mail, Key, LogIn } from 'lucide-react';
 
 const Lobby = () => {
-    const [email, setEmail] = useState('');
+    const [name, setName] = useState('');
     const [roomId, setRoomId] = useState('');
     const socket = useSocket();
     const navigate = useNavigate();
@@ -16,22 +16,22 @@ const Lobby = () => {
                 console.error("Socket not initialized");
                 return;
             }
-            if (!email || !roomId) {
-                console.error("Email or Room ID is empty!");
+            if (!name || !roomId) {
+                console.error("name or Room ID is empty!");
                 return;
             }
 
-            console.log("Sending join-room event:", { email, roomId });
-            socket.emit("room:join", { email, roomId });
+            console.log("Sending join-room event:", { name, roomId });
+            socket.emit("room:join", { name, roomId });
         },
-        [email, roomId, socket]
+        [name, roomId, socket]
     );
 
     useEffect(() => {
         if (!socket) return;
 
         const handleRoomJoin = (data) => {
-            console.log("Room joined:", data.email);
+            console.log("Room joined:", data.name);
             navigate(`/room/${data.roomId}`);
         };
 
@@ -58,17 +58,17 @@ const Lobby = () => {
                         <div className="space-y-4">
                             <div>
                                 <label className="block text-sm font-medium mb-2">
-                                    Email Address
+                                    Name
                                 </label>
                                 <div className="relative">
                                     <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
                                         <Mail size={20} className="text-gray-400" />
                                     </div>
                                     <input
-                                        type="email"
-                                        value={email}
-                                        onChange={(e) => setEmail(e.target.value)}
-                                        placeholder="Enter your email"
+                                        type="name"
+                                        value={name}
+                                        onChange={(e) => setName(e.target.value)}
+                                        placeholder="Enter your name"
                                         className="w-full pl-10 pr-4 py-2 rounded-lg bg-gray-700 border border-gray-600 focus:border-blue-500 focus:ring-2 focus:ring-blue-500 focus:outline-none transition-colors text-white"
                                     />
                                 </div>
