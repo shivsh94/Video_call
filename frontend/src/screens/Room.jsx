@@ -10,7 +10,7 @@ const Room = () => {
     const [myStream, setMyStream] = useState(null);
     const [remoteStream, setRemoteStream] = useState(null);
 
-   
+
     const handleRoomJoin = useCallback(
         (data) => {
             console.log("Room joined:", data.name);
@@ -20,11 +20,9 @@ const Room = () => {
     );
 
     const handleCall = useCallback(async () => {
-        const stream = await navigator.mediaDevices.getUserMedia({ video: true,audio: {
-            echoCancellation: true,
-            noiseSuppression: true,
-            sampleRate: 44100,
-          },});
+        const stream = await navigator.mediaDevices.getUserMedia({
+            video: true, audio: true,
+        });
         const offer = await peer.getOffer();
         socket.emit("user:call", { to: remoteSocketId, offer });
         setMyStream(stream);
@@ -32,11 +30,9 @@ const Room = () => {
 
     const handleIncomingCall = useCallback(async ({ from, offer }) => {
         setRemoteSocketId(from);
-        const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: {
-            echoCancellation: true,
-            noiseSuppression: true,
-            sampleRate: 44100,
-          },});
+        const stream = await navigator.mediaDevices.getUserMedia({
+            video: true, audio: true,
+        });
         setMyStream(stream);
         console.log("Incoming call from:", from);
         console.log("Offer:", offer);
@@ -108,7 +104,7 @@ const Room = () => {
                 {/* Header Section */}
                 <div className="text-center mb-8">
                     <h1 className="text-3xl md:text-4xl font-bold mb-6">Video Chat Room</h1>
-                    
+
                     <div className="flex items-center justify-center gap-2 mb-6">
                         {remoteSocketId ? (
                             <div className="flex items-center gap-2 text-green-400">
@@ -125,7 +121,7 @@ const Room = () => {
 
                     <div className="flex gap-4 justify-center">
                         {myStream && (
-                            <button 
+                            <button
                                 onClick={sendStreams}
                                 className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 px-4 py-2 rounded-lg transition-colors"
                             >
@@ -135,7 +131,7 @@ const Room = () => {
                         )}
 
                         {remoteSocketId && (
-                            <button 
+                            <button
                                 onClick={handleCall}
                                 className="flex items-center gap-2 border-2 border-amber-400 text-amber-400 hover:bg-amber-400/10 px-4 py-2 rounded-lg transition-colors"
                             >
@@ -171,14 +167,18 @@ const Room = () => {
                         <div className="w-full">
                             <h2 className="text-xl font-semibold mb-4 text-center">Remote Video</h2>
                             <div className="rounded-xl overflow-hidden bg-gray-800 shadow-lg">
-                                <div style={{ transform: "scaleX(-1)" }} className="aspect-video">
+                                <div  className="aspect-video">
                                     <ReactPlayer
                                         url={remoteStream}
                                         playing={true}
                                         controls={true}
                                         width="100%"
                                         height="100%"
+                                        muted={false} // Ensure it's not muted
+                                        volume={1} // Set volume to max (1)
+                                        style={{ transform: "scaleX(-1)" }}
                                     />
+
                                 </div>
                             </div>
                         </div>
