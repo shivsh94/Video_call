@@ -1,5 +1,4 @@
-import React, { use, useCallback, useEffect, useState } from 'react';
-import ReactPlayer from 'react-player';
+import React, { useCallback, useEffect, useState } from 'react';
 import { useSocket } from '../context/SocketProvider';
 import peer from '../service/peer';
 import { Video, Phone, UserCheck, UserX } from 'lucide-react';
@@ -9,7 +8,6 @@ const Room = () => {
     const [remoteSocketId, setRemoteSocketId] = useState(null);
     const [myStream, setMyStream] = useState(null);
     const [remoteStream, setRemoteStream] = useState(null);
-
 
     const handleRoomJoin = useCallback(
         (data) => {
@@ -21,19 +19,33 @@ const Room = () => {
 
     const handleCall = useCallback(async () => {
         const stream = await navigator.mediaDevices.getUserMedia({
-            video: true, audio: true,
+            video: true,
+            audio: {
+                echoCancellation: true,
+                noiseSuppression: true,
+                autoGainControl: true,
+            },
         });
+
+        setMyStream(stream);
+
         const offer = await peer.getOffer();
         socket.emit("user:call", { to: remoteSocketId, offer });
-        setMyStream(stream);
     }, [remoteSocketId, socket]);
 
     const handleIncomingCall = useCallback(async ({ from, offer }) => {
         setRemoteSocketId(from);
         const stream = await navigator.mediaDevices.getUserMedia({
-            video: true, audio: true,
+            video: true,
+            audio: {
+                echoCancellation: true,
+                noiseSuppression: true,
+                autoGainControl: true,
+            },
         });
+
         setMyStream(stream);
+
         console.log("Incoming call from:", from);
         console.log("Offer:", offer);
         const ans = await peer.getAnswer(offer);
@@ -41,6 +53,7 @@ const Room = () => {
     }, [socket]);
 
     const sendStreams = useCallback(() => {
+        if (!myStream) return;
         for (const track of myStream.getTracks()) {
             peer.peer.addTrack(track, myStream);
         }
@@ -74,9 +87,9 @@ const Room = () => {
     }, []);
 
     useEffect(() => {
-        peer.peer.addEventListener("track", async ev => {
-            const remoteStream = ev.streams
-            console.log("GOT TRACKS")
+        peer.peer.addEventListener("track", async (ev) => {
+            const remoteStream = ev.streams;
+            console.log("GOT TRACKS");
             setRemoteStream(remoteStream[0]);
         });
     }, []);
@@ -97,6 +110,25 @@ const Room = () => {
             socket.off("peer:nego:final", handleNegoFinal);
         };
     }, [socket, handleRoomJoin, handleIncomingCall]);
+
+    // 🔹 Force Bluetooth Audio Output (Fixes No Audio on Bluetooth)
+    useEffect(() => {
+        if (!remoteStream) return;
+
+        navigator.mediaDevices.enumerateDevices().then((devices) => {
+            const bluetoothDevice = devices.find(
+                (device) => device.kind === "audiooutput" && device.label.includes("Bluetooth")
+            );
+            if (bluetoothDevice) {
+                const videoElement = document.getElementById("remote-video");
+                if (videoElement) {
+                    videoElement.setSinkId(bluetoothDevice.deviceId).catch((err) => {
+                        console.error("Bluetooth Output Error:", err);
+                    });
+                }
+            }
+        });
+    }, [remoteStream]);
 
     return (
         <div className="min-h-screen bg-gradient-to-b from-gray-900 to-black text-white">
@@ -148,17 +180,13 @@ const Room = () => {
                     {myStream && (
                         <div className="w-full">
                             <h2 className="text-xl font-semibold mb-4 text-center">My Video</h2>
-                            <div className="rounded-xl overflow-hidden bg-gray-800 shadow-lg">
-                                <div style={{ transform: "scaleX(-1)" }} className="aspect-video">
-                                    <ReactPlayer
-                                        url={myStream}
-                                        playing={true}
-                                        controls={true}
-                                        width="100%"
-                                        height="100%"
-                                    />
-                                </div>
-                            </div>
+                            <video
+                                ref={(video) => video && (video.srcObject = myStream)}
+                                autoPlay
+                                muted
+                                className="w-full rounded-xl bg-gray-800"
+                                style={{ transform: "scaleX(-1)" }}
+                            />
                         </div>
                     )}
 
@@ -166,27 +194,18 @@ const Room = () => {
                     {remoteStream && (
                         <div className="w-full">
                             <h2 className="text-xl font-semibold mb-4 text-center">Remote Video</h2>
-                            <div className="rounded-xl overflow-hidden bg-gray-800 shadow-lg">
-                                <div  className="aspect-video">
-                                    <ReactPlayer
-                                        url={remoteStream}
-                                        playing={true}
-                                        controls={true}
-                                        width="100%"
-                                        height="100%"
-                                        muted={false} // Ensure it's not muted
-                                        volume={1} // Set volume to max (1)
-                                        style={{ transform: "scaleX(-1)" }}
-                                    />
-
-                                </div>
-                            </div>
+                            <video
+                                id="remote-video"
+                                ref={(video) => video && (video.srcObject = remoteStream)}
+                                autoPlay
+                                className="w-full rounded-xl bg-gray-800"
+                            />
                         </div>
                     )}
                 </div>
             </div>
         </div>
     );
-}
+};
 
 export default Room;
