@@ -199,6 +199,7 @@ const Room = () => {
                                 ref={(video) => video && (video.srcObject = remoteStream)}
                                 autoPlay
                                 className="w-full rounded-xl bg-gray-800"
+                                style={{ transform: "scaleX(-1)" }}
                             />
                         </div>
                     )}
