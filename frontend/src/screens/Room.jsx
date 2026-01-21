@@ -5,7 +5,7 @@ import { Video, Phone, UserCheck, UserX, Users } from 'lucide-react';
 
 const Room = () => {
     const socket = useSocket();
-    const [remotePeers, setRemotePeers] = useState(new Map()); // Map of userId -> {email, stream}
+    const [remotePeers, setRemotePeers] = useState(new Map()); // Map of userId -> {email, stream, tracksAdded}
     const [myStream, setMyStream] = useState(null);
 
     // Handle existing users in the room
@@ -20,7 +20,7 @@ const Room = () => {
         
         setRemotePeers((prev) => {
             const newPeers = new Map(prev);
-            newPeers.set(id, { email, stream: null });
+            newPeers.set(id, { email, stream: null, tracksAdded: false });
             return newPeers;
         });
 
@@ -76,7 +76,7 @@ const Room = () => {
         setRemotePeers((prev) => {
             if (!prev.has(from)) {
                 const newPeers = new Map(prev);
-                newPeers.set(from, { email: 'Unknown', stream: null });
+                newPeers.set(from, { email: 'Unknown', stream: null, tracksAdded: false });
                 return newPeers;
             }
             return prev;
@@ -85,9 +85,30 @@ const Room = () => {
 
     const sendStreams = useCallback((userId) => {
         if (!myStream) return;
+        
+        const peerConnection = peer.getPeer(userId);
+        if (!peerConnection) return;
+        
+        // Check if tracks are already added to avoid duplicate error
+        const senders = peerConnection.getSenders();
+        if (senders.length > 0) {
+            console.log("Tracks already added to peer:", userId);
+            return;
+        }
+        
         for (const track of myStream.getTracks()) {
             peer.addTrack(userId, track, myStream);
         }
+        
+        // Mark tracks as added
+        setRemotePeers((prev) => {
+            const newPeers = new Map(prev);
+            const existing = newPeers.get(userId);
+            if (existing) {
+                newPeers.set(userId, { ...existing, tracksAdded: true });
+            }
+            return newPeers;
+        });
     }, [myStream]);
 
     const handleCallAccepted = useCallback(async ({ from, answer }) => {
@@ -113,14 +134,19 @@ const Room = () => {
     // Setup track listeners for each peer
     useEffect(() => {
         remotePeers.forEach((peerData, userId) => {
-            const peerConnection = peer.getPeer(userId);
-            if (peerConnection && !peerData.stream) {
-                peerConnection.ontrack = (ev) => {
-                    console.log("GOT TRACKS from:", userId);
-                    setRemotePeers((prev) => {
-                        const newPeers = new Map(prev);
-                        const existing = newPeers.get(userId);
-                        if (existing) {
+       Send streams to new peers only when they're ready and tracks haven't been added
+    useEffect(() => {
+        if (myStream) {
+            remotePeers.forEach((peerData, userId) => {
+                if (!peerData.tracksAdded) {
+                    const peerConnection = peer.getPeer(userId);
+                    if (peerConnection && peerConnection.signalingState !== 'closed') {
+                        sendStreams(userId);
+                    }
+                }
+            });
+        }
+    }, [myStream
                             newPeers.set(userId, { ...existing, stream: ev.streams[0] });
                         }
                         return newPeers;
