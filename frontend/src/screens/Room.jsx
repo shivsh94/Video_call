@@ -134,19 +134,14 @@ const Room = () => {
     // Setup track listeners for each peer
     useEffect(() => {
         remotePeers.forEach((peerData, userId) => {
-       Send streams to new peers only when they're ready and tracks haven't been added
-    useEffect(() => {
-        if (myStream) {
-            remotePeers.forEach((peerData, userId) => {
-                if (!peerData.tracksAdded) {
-                    const peerConnection = peer.getPeer(userId);
-                    if (peerConnection && peerConnection.signalingState !== 'closed') {
-                        sendStreams(userId);
-                    }
-                }
-            });
-        }
-    }, [myStream
+            const peerConnection = peer.getPeer(userId);
+            if (peerConnection && !peerData.stream) {
+                peerConnection.ontrack = (ev) => {
+                    console.log("GOT TRACKS from:", userId);
+                    setRemotePeers((prev) => {
+                        const newPeers = new Map(prev);
+                        const existing = newPeers.get(userId);
+                        if (existing) {
                             newPeers.set(userId, { ...existing, stream: ev.streams[0] });
                         }
                         return newPeers;
@@ -160,14 +155,19 @@ const Room = () => {
         });
     }, [remotePeers, handleNegotiationNeeded]);
 
-    // Auto send streams when myStream becomes available
+    // Send streams to new peers only when they're ready and tracks haven't been added
     useEffect(() => {
         if (myStream) {
             remotePeers.forEach((peerData, userId) => {
-                sendStreams(userId);
+                if (!peerData.tracksAdded) {
+                    const peerConnection = peer.getPeer(userId);
+                    if (peerConnection && peerConnection.signalingState !== 'closed') {
+                        sendStreams(userId);
+                    }
+                }
             });
         }
-    }, [myStream, remotePeers, sendStreams]);
+    }, [myStream, sendStreams]);
 
     useEffect(() => {
         if (!socket) return;
