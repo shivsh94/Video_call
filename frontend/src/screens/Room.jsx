@@ -1,134 +1,169 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { useSocket } from '../context/SocketProvider';
 import peer from '../service/peer';
-import { Video, Phone, UserCheck, UserX } from 'lucide-react';
+import { Video, Phone, UserCheck, UserX, Users } from 'lucide-react';
 
 const Room = () => {
     const socket = useSocket();
-    const [remoteSocketId, setRemoteSocketId] = useState(null);
+    const [remotePeers, setRemotePeers] = useState(new Map()); // Map of userId -> {email, stream}
     const [myStream, setMyStream] = useState(null);
-    const [remoteStream, setRemoteStream] = useState(null);
 
-    const handleRoomJoin = useCallback(
-        (data) => {
-            console.log("Room joined:", data.name);
-            setRemoteSocketId(data.id);
-        },
-        []
-    );
+    // Handle existing users in the room
+    const handleRoomUsers = useCallback((data) => {
+        console.log("Existing users in room:", data.users);
+        // We'll receive user:joined events for initiating connections
+    }, []);
 
-    const handleCall = useCallback(async () => {
-        const stream = await navigator.mediaDevices.getUserMedia({
-            video: true,
-            audio: {
-                echoCancellation: true,
-                noiseSuppression: true,
-                autoGainControl: true,
-            },
+    // Handle new user joining
+    const handleUserJoined = useCallback(async ({ email, id }) => {
+        console.log("User joined:", email, id);
+        
+        setRemotePeers((prev) => {
+            const newPeers = new Map(prev);
+            newPeers.set(id, { email, stream: null });
+            return newPeers;
         });
 
-        setMyStream(stream);
+        // Get user media if not already available
+        if (!myStream) {
+            const stream = await navigator.mediaDevices.getUserMedia({
+                video: true,
+                audio: {
+                    echoCancellation: true,
+                    noiseSuppression: true,
+                    autoGainControl: true,
+                },
+            });
+            setMyStream(stream);
+        }
 
-        const offer = await peer.getOffer();
-        socket.emit("user:call", { to: remoteSocketId, offer });
-    }, [remoteSocketId, socket]);
+        // Create offer for the new user
+        const offer = await peer.getOffer(id);
+        socket.emit("user:call", { to: id, offer });
+    }, [socket, myStream]);
+
+    // Handle user leaving
+    const handleUserLeft = useCallback(({ email, id }) => {
+        console.log("User left:", email, id);
+        peer.removePeer(id);
+        setRemotePeers((prev) => {
+            const newPeers = new Map(prev);
+            newPeers.delete(id);
+            return newPeers;
+        });
+    }, []);
 
     const handleIncomingCall = useCallback(async ({ from, offer }) => {
-        setRemoteSocketId(from);
-        const stream = await navigator.mediaDevices.getUserMedia({
-            video: true,
-            audio: {
-                echoCancellation: true,
-                noiseSuppression: true,
-                autoGainControl: true,
-            },
-        });
-
-        setMyStream(stream);
-
         console.log("Incoming call from:", from);
-        console.log("Offer:", offer);
-        const ans = await peer.getAnswer(offer);
-        socket.emit("call:accepted", { to: from, answer: ans });
-    }, [socket]);
 
-    const sendStreams = useCallback(() => {
+        // Get user media if not already available
+        if (!myStream) {
+            const stream = await navigator.mediaDevices.getUserMedia({
+                video: true,
+                audio: {
+                    echoCancellation: true,
+                    noiseSuppression: true,
+                    autoGainControl: true,
+                },
+            });
+            setMyStream(stream);
+        }
+
+        const ans = await peer.getAnswer(from, offer);
+        socket.emit("call:accepted", { to: from, answer: ans });
+
+        // Add to remote peers if not already there
+        setRemotePeers((prev) => {
+            if (!prev.has(from)) {
+                const newPeers = new Map(prev);
+                newPeers.set(from, { email: 'Unknown', stream: null });
+                return newPeers;
+            }
+            return prev;
+        });
+    }, [socket, myStream]);
+
+    const sendStreams = useCallback((userId) => {
         if (!myStream) return;
         for (const track of myStream.getTracks()) {
-            peer.peer.addTrack(track, myStream);
+            peer.addTrack(userId, track, myStream);
         }
     }, [myStream]);
 
     const handleCallAccepted = useCallback(async ({ from, answer }) => {
-        peer.setRemoteDescription(answer);
+        await peer.setRemoteDescription(from, answer);
         console.log("Call accepted from:", from);
-        sendStreams();
+        sendStreams(from);
     }, [sendStreams]);
 
-    const handleNegotiationNeeded = useCallback(async () => {
-        const offer = await peer.getOffer();
-        socket.emit("peer:nego:needed", { to: remoteSocketId, offer });
-    }, [remoteSocketId, socket]);
-
-    useEffect(() => {
-        peer.peer.addEventListener("negotiationneeded", handleNegotiationNeeded);
-        return () => {
-            peer.peer.removeEventListener("negotiationneeded", handleNegotiationNeeded);
-        };
-    }, [handleNegotiationNeeded]);
+    const handleNegotiationNeeded = useCallback(async (userId) => {
+        const offer = await peer.getOffer(userId);
+        socket.emit("peer:nego:needed", { to: userId, offer });
+    }, [socket]);
 
     const handleNegoNeedIncoming = useCallback(async ({ from, offer }) => {
-        const ans = await peer.getAnswer(offer);
+        const ans = await peer.getAnswer(from, offer);
         socket.emit("peer:nego:done", { to: from, answer: ans });
     }, [socket]);
 
-    const handleNegoFinal = useCallback(async ({ answer }) => {
-        await peer.setRemoteDescription(answer);
+    const handleNegoFinal = useCallback(async ({ from, answer }) => {
+        await peer.setRemoteDescription(from, answer);
     }, []);
 
+    // Setup track listeners for each peer
     useEffect(() => {
-        peer.peer.addEventListener("track", async (ev) => {
-            const remoteStream = ev.streams;
-            console.log("GOT TRACKS");
-            setRemoteStream(remoteStream[0]);
+        remotePeers.forEach((peerData, userId) => {
+            const peerConnection = peer.getPeer(userId);
+            if (peerConnection && !peerData.stream) {
+                peerConnection.ontrack = (ev) => {
+                    console.log("GOT TRACKS from:", userId);
+                    setRemotePeers((prev) => {
+                        const newPeers = new Map(prev);
+                        const existing = newPeers.get(userId);
+                        if (existing) {
+                            newPeers.set(userId, { ...existing, stream: ev.streams[0] });
+                        }
+                        return newPeers;
+                    });
+                };
+
+                peerConnection.onnegotiationneeded = () => {
+                    handleNegotiationNeeded(userId);
+                };
+            }
         });
-    }, []);
+    }, [remotePeers, handleNegotiationNeeded]);
+
+    // Auto send streams when myStream becomes available
+    useEffect(() => {
+        if (myStream) {
+            remotePeers.forEach((peerData, userId) => {
+                sendStreams(userId);
+            });
+        }
+    }, [myStream, remotePeers, sendStreams]);
 
     useEffect(() => {
         if (!socket) return;
-        socket.on("user:join", handleRoomJoin);
+        
+        socket.on("room:users", handleRoomUsers);
+        socket.on("user:joined", handleUserJoined);
+        socket.on("user:left", handleUserLeft);
         socket.on("incoming:call", handleIncomingCall);
         socket.on("call:accepted", handleCallAccepted);
         socket.on("peer:nego:needed", handleNegoNeedIncoming);
         socket.on("peer:nego:final", handleNegoFinal);
 
         return () => {
-            socket.off("user:join", handleRoomJoin);
+            socket.off("room:users", handleRoomUsers);
+            socket.off("user:joined", handleUserJoined);
+            socket.off("user:left", handleUserLeft);
             socket.off("incoming:call", handleIncomingCall);
             socket.off("call:accepted", handleCallAccepted);
             socket.off("peer:nego:needed", handleNegoNeedIncoming);
             socket.off("peer:nego:final", handleNegoFinal);
         };
-    }, [socket, handleRoomJoin, handleIncomingCall]);
-
-    // 🔹 Force Bluetooth Audio Output (Fixes No Audio on Bluetooth)
-    useEffect(() => {
-        if (!remoteStream) return;
-
-        navigator.mediaDevices.enumerateDevices().then((devices) => {
-            const bluetoothDevice = devices.find(
-                (device) => device.kind === "audiooutput" && device.label.includes("Bluetooth")
-            );
-            if (bluetoothDevice) {
-                const videoElement = document.getElementById("remote-video");
-                if (videoElement) {
-                    videoElement.setSinkId(bluetoothDevice.deviceId).catch((err) => {
-                        console.error("Bluetooth Output Error:", err);
-                    });
-                }
-            }
-        });
-    }, [remoteStream]);
+    }, [socket, handleRoomUsers, handleUserJoined, handleUserLeft, handleIncomingCall, handleCallAccepted, handleNegoNeedIncoming, handleNegoFinal]);
 
     return (
         <div className="min-h-screen bg-gradient-to-b from-gray-900 to-black text-white">
@@ -137,8 +172,13 @@ const Room = () => {
                 <div className="text-center mb-8">
                     <h1 className="text-3xl md:text-4xl font-bold mb-6">Video Chat Room</h1>
 
-                    <div className="flex items-center justify-center gap-2 mb-6">
-                        {remoteSocketId ? (
+                    <div className="flex items-center justify-center gap-4 mb-6">
+                        <div className="flex items-center gap-2 text-blue-400">
+                            <Users size={24} />
+                            <span className="text-lg">{remotePeers.size + 1} Participants</span>
+                        </div>
+                        
+                        {remotePeers.size > 0 ? (
                             <div className="flex items-center gap-2 text-green-400">
                                 <UserCheck size={24} />
                                 <span className="text-lg">Connected</span>
@@ -146,64 +186,66 @@ const Room = () => {
                         ) : (
                             <div className="flex items-center gap-2 text-gray-400">
                                 <UserX size={24} />
-                                <span className="text-lg">Waiting for Other User </span>
+                                <span className="text-lg">Waiting for Others</span>
                             </div>
-                        )}
-                    </div>
-
-                    <div className="flex gap-4 justify-center">
-                        {myStream && (
-                            <button
-                                onClick={sendStreams}
-                                className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 px-4 py-2 rounded-lg transition-colors"
-                            >
-                                <Video size={20} />
-                                <span>Send Stream</span>
-                            </button>
-                        )}
-
-                        {remoteSocketId && (
-                            <button
-                                onClick={handleCall}
-                                className="flex items-center gap-2 border-2 border-amber-400 text-amber-400 hover:bg-amber-400/10 px-4 py-2 rounded-lg transition-colors"
-                            >
-                                <Phone size={20} />
-                                <span>Call</span>
-                            </button>
                         )}
                     </div>
                 </div>
 
                 {/* Video Streams Grid */}
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                <div className={`grid gap-4 ${
+                    remotePeers.size === 0 ? 'grid-cols-1' :
+                    remotePeers.size === 1 ? 'grid-cols-1 md:grid-cols-2' :
+                    remotePeers.size === 2 ? 'grid-cols-1 md:grid-cols-3' :
+                    remotePeers.size <= 5 ? 'grid-cols-2 md:grid-cols-3' :
+                    'grid-cols-2 md:grid-cols-3 lg:grid-cols-4'
+                }`}>
                     {/* Local Stream */}
                     {myStream && (
                         <div className="w-full">
-                            <h2 className="text-xl font-semibold mb-4 text-center">My Video</h2>
-                            <video
-                                ref={(video) => video && (video.srcObject = myStream)}
-                                autoPlay
-                                muted
-                                className="w-full rounded-xl bg-gray-800"
-                                style={{ transform: "scaleX(-1)" }}
-                            />
+                            <div className="relative">
+                                <video
+                                    ref={(video) => video && (video.srcObject = myStream)}
+                                    autoPlay
+                                    muted
+                                    className="w-full rounded-xl bg-gray-800"
+                                    style={{ transform: "scaleX(-1)" }}
+                                />
+                                <div className="absolute bottom-4 left-4 bg-black/70 px-3 py-1 rounded-lg">
+                                    <span className="text-sm font-medium">You</span>
+                                </div>
+                            </div>
                         </div>
                     )}
 
-                    {/* Remote Stream */}
-                    {remoteStream && (
-                        <div className="w-full">
-                            <h2 className="text-xl font-semibold mb-4 text-center">Remote Video</h2>
-                            <video
-                                id="remote-video"
-                                ref={(video) => video && (video.srcObject = remoteStream)}
-                                autoPlay
-                                className="w-full rounded-xl bg-gray-800"
-                                style={{ transform: "scaleX(-1)" }}
-                            />
-                        </div>
-                    )}
+                    {/* Remote Streams */}
+                    {Array.from(remotePeers.entries()).map(([userId, peerData]) => (
+                        peerData.stream && (
+                            <div key={userId} className="w-full">
+                                <div className="relative">
+                                    <video
+                                        ref={(video) => video && (video.srcObject = peerData.stream)}
+                                        autoPlay
+                                        className="w-full rounded-xl bg-gray-800"
+                                        style={{ transform: "scaleX(-1)" }}
+                                    />
+                                    <div className="absolute bottom-4 left-4 bg-black/70 px-3 py-1 rounded-lg">
+                                        <span className="text-sm font-medium">{peerData.email}</span>
+                                    </div>
+                                </div>
+                            </div>
+                        )
+                    ))}
                 </div>
+
+                {/* Waiting message when alone */}
+                {!myStream && remotePeers.size === 0 && (
+                    <div className="text-center mt-12">
+                        <p className="text-gray-400 text-lg">
+                            Waiting for participants to join...
+                        </p>
+                    </div>
+                )}
             </div>
         </div>
     );
