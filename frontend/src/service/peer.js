@@ -15,6 +15,8 @@ class PeerService {
                     },
                 ]
             });
+            
+            console.log(`Created new peer connection for userId: ${userId}`);
             this.peers.set(userId, peer);
         }
         return this.peers.get(userId);
@@ -57,7 +59,16 @@ class PeerService {
     addTrack(userId, track, stream) {
         const peer = this.getPeer(userId);
         if (peer) {
-            peer.addTrack(track, stream);
+            // Check if this track is already added
+            const senders = peer.getSenders();
+            const trackExists = senders.some(sender => sender.track === track);
+            
+            if (!trackExists) {
+                peer.addTrack(track, stream);
+                console.log(`Added ${track.kind} track to peer ${userId}`);
+            } else {
+                console.log(`Track ${track.kind} already exists for peer ${userId}`);
+            }
         }
     }
 }
