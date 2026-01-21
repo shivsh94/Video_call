@@ -25,8 +25,9 @@ const Room = () => {
         });
 
         // Get user media if not already available
-        if (!myStream) {
-            const stream = await navigator.mediaDevices.getUserMedia({
+        let stream = myStream;
+        if (!stream) {
+            stream = await navigator.mediaDevices.getUserMedia({
                 video: true,
                 audio: {
                     echoCancellation: true,
@@ -37,10 +38,29 @@ const Room = () => {
             setMyStream(stream);
         }
 
+        // Setup track listener before creating offer
+        const peerConnection = peer.createPeer(id);
+        peerConnection.ontrack = (ev) => {
+            console.log("GOT TRACKS from:", id);
+            setRemotePeers((prev) => {
+                const newPeers = new Map(prev);
+                const existing = newPeers.get(id);
+                if (existing) {
+                    newPeers.set(id, { ...existing, stream: ev.streams[0] });
+                }
+                return newPeers;
+            });
+        };
+
+        // Add tracks before creating offer
+        stream.getTracks().forEach((track) => {
+            peer.addTrack(id, track, stream);
+        });
+
         // Create offer for the new user
         const offer = await peer.getOffer(id);
         socket.emit("user:call", { to: id, offer });
-    }, [socket, myStream]);
+    }, [socket]);
 
     // Handle user leaving
     const handleUserLeft = useCallback(({ email, id }) => {
@@ -57,8 +77,9 @@ const Room = () => {
         console.log("Incoming call from:", from);
 
         // Get user media if not already available
-        if (!myStream) {
-            const stream = await navigator.mediaDevices.getUserMedia({
+        let stream = myStream;
+        if (!stream) {
+            stream = await navigator.mediaDevices.getUserMedia({
                 video: true,
                 audio: {
                     echoCancellation: true,
@@ -69,6 +90,25 @@ const Room = () => {
             setMyStream(stream);
         }
 
+        // Setup track listener
+        const peerConnection = peer.getPeer(from) || peer.createPeer(from);
+        peerConnection.ontrack = (ev) => {
+            console.log("GOT TRACKS from:", from);
+            setRemotePeers((prev) => {
+                const newPeers = new Map(prev);
+                const existing = newPeers.get(from);
+                if (existing) {
+                    newPeers.set(from, { ...existing, stream: ev.streams[0] });
+                }
+                return newPeers;
+            });
+        };
+
+        // Add tracks before answering
+        stream.getTracks().forEach((track) => {
+            peer.addTrack(from, track, stream);
+        });
+
         const ans = await peer.getAnswer(from, offer);
         socket.emit("call:accepted", { to: from, answer: ans });
 
@@ -76,12 +116,12 @@ const Room = () => {
         setRemotePeers((prev) => {
             if (!prev.has(from)) {
                 const newPeers = new Map(prev);
-                newPeers.set(from, { email: 'Unknown', stream: null, tracksAdded: false });
+                newPeers.set(from, { email: 'Unknown', stream: null, tracksAdded: true });
                 return newPeers;
             }
             return prev;
         });
-    }, [socket, myStream]);
+    }, [socket]);
 
     const sendStreams = useCallback((userId) => {
         if (!myStream) return;
@@ -114,8 +154,7 @@ const Room = () => {
     const handleCallAccepted = useCallback(async ({ from, answer }) => {
         await peer.setRemoteDescription(from, answer);
         console.log("Call accepted from:", from);
-        sendStreams(from);
-    }, [sendStreams]);
+    }, []);
 
     const handleNegotiationNeeded = useCallback(async (userId) => {
         const offer = await peer.getOffer(userId);
@@ -131,43 +170,17 @@ const Room = () => {
         await peer.setRemoteDescription(from, answer);
     }, []);
 
-    // Setup track listeners for each peer
+    // Setup negotiation listeners for each peer
     useEffect(() => {
         remotePeers.forEach((peerData, userId) => {
             const peerConnection = peer.getPeer(userId);
-            if (peerConnection && !peerData.stream) {
-                peerConnection.ontrack = (ev) => {
-                    console.log("GOT TRACKS from:", userId);
-                    setRemotePeers((prev) => {
-                        const newPeers = new Map(prev);
-                        const existing = newPeers.get(userId);
-                        if (existing) {
-                            newPeers.set(userId, { ...existing, stream: ev.streams[0] });
-                        }
-                        return newPeers;
-                    });
-                };
-
+            if (peerConnection) {
                 peerConnection.onnegotiationneeded = () => {
                     handleNegotiationNeeded(userId);
                 };
             }
         });
     }, [remotePeers, handleNegotiationNeeded]);
-
-    // Send streams to new peers only when they're ready and tracks haven't been added
-    useEffect(() => {
-        if (myStream) {
-            remotePeers.forEach((peerData, userId) => {
-                if (!peerData.tracksAdded) {
-                    const peerConnection = peer.getPeer(userId);
-                    if (peerConnection && peerConnection.signalingState !== 'closed') {
-                        sendStreams(userId);
-                    }
-                }
-            });
-        }
-    }, [myStream, sendStreams]);
 
     useEffect(() => {
         if (!socket) return;
